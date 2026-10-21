@@ -28,6 +28,8 @@ PORT=24433
 HOST=0.0.0.0
 MEDIA_ROOT=G:\media
 SITE_TITLE=Media
+AUTH_USER=admin
+AUTH_PASS=change-me
 ```
 
 ## 配置 / Settings
@@ -38,6 +40,8 @@ SITE_TITLE=Media
 | `HOST` | `0.0.0.0` | 监听地址 / bind address |
 | `MEDIA_ROOT` | — | 媒体根目录，绝对路径 / media root, absolute path |
 | `SITE_TITLE` | `Media` | 页面标题 / page title |
+| `AUTH_USER` | — | 登录用户名，留空则关闭认证 / login user, empty disables auth |
+| `AUTH_PASS` | — | 登录密码 / login password |
 
 ## 功能 / Features
 
@@ -49,6 +53,7 @@ SITE_TITLE=Media
 - 同名 `.vtt` 字幕自动挂载 / matching `.vtt` subtitles are attached
 - 排序：名称 / 大小 / 时间 / sort by name, size or time
 - 路径穿越防护，只读，不写文件 / path traversal guarded, read-only
+- Cookie 登录，凭据写在 `.env`，改密码即踢掉所有旧会话 / cookie login, credentials in `.env`
 
 ## 路由 / Routes
 
@@ -59,6 +64,15 @@ SITE_TITLE=Media
 | `/w/<path>` | 播放页 |
 | `/f/<path>` | 原始文件（流式，支持 Range 与 `?dl=1` 下载） |
 | `/api/health` | 健康检查 |
+| `/login` `/logout` | 登录 / 退出 |
+
+## 登录 / Auth
+
+设置 `AUTH_USER` / `AUTH_PASS` 后，未登录访问会跳到 `/login`；登录状态用 HMAC 签名 cookie 保存 30 天。
+
+Set both `AUTH_USER` and `AUTH_PASS` to enable the login page. Sessions are
+stateless HMAC-signed cookies valid for 30 days; changing either value
+invalidates every existing session. Leave them empty to serve anonymously.
 
 ## 开机自启（Windows，可选）/ Autostart
 

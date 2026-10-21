@@ -9,7 +9,8 @@ const { loadEnv } = require('./lib/env')
 const {
   isVideo, isSubtitle, mimeOf, resolveInside, dirUrl, watchUrl, readDir
 } = require('./lib/fsx')
-const { listingPage, watchPage, errorPage } = require('./lib/views')
+const { listingPage, watchPage, errorPage, loginPage } = require('./lib/views')
+const { createAuth, parseCookies } = require('./lib/auth')
 
 loadEnv()
 
@@ -17,6 +18,7 @@ const PORT = Number(process.env.PORT || 24433)
 const HOST = process.env.HOST || '0.0.0.0'
 const SITE_TITLE = process.env.SITE_TITLE || 'Media'
 const MEDIA_ROOT = path.resolve(process.env.MEDIA_ROOT || '.')
+const auth = createAuth(process.env.AUTH_USER, process.env.AUTH_PASS)
 
 if (!process.env.MEDIA_ROOT) {
   console.error('[video-server] MEDIA_ROOT is not set. Copy .env.example to .env and set it.')
@@ -47,6 +49,35 @@ function notFound (res, msg = '页面不存在') {
   send(res, 404, errorPage({ status: 404, message: msg, title: SITE_TITLE }))
 }
 
+function redirect (res, location, extraHeaders = {}) {
+  res.writeHead(302, { Location: location, 'Cache-Control': 'no-store', ...extraHeaders })
+  res.end()
+}
+
+function safeNext (raw) {
+  const v = String(raw || '/')
+  if (!v.startsWith('/') || v.startsWith('//')) return '/'
+  return v
+}
+
+function readBody (req, limit = 4096) {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks = []
+    req.on('data', c => {
+      size += c.length
+      if (size > limit) {
+        reject(new Error('body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    req.on('error', reject)
+  })
+}
+
 /** split a decoded pathname into safe segments */
 function segmentsOf (pathname) {
   return pathname.split('/').map(s => s.trim()).filter(Boolean)
@@ -71,7 +102,8 @@ async function serveListing (req, res, segs, query) {
     hasParent: segs.length > 0,
     sort,
     order,
-    relPath
+    relPath,
+    showLogout: !!auth
   }))
 }
 
@@ -114,7 +146,8 @@ async function serveWatch (req, res, segs) {
     relPath,
     items,
     current: relPath,
-    subtitles
+    subtitles,
+    showLogout: !!auth
   }))
 }
 
@@ -186,10 +219,32 @@ function serveAsset (res, name) {
   })
 }
 
+async function handleLogin (req, res) {
+  if (!auth) return redirect(res, '/')
+  let form
+  try {
+    form = new URLSearchParams(await readBody(req))
+  } catch {
+    return send(res, 413, errorPage({ status: 413, message: '请求过大', title: SITE_TITLE }))
+  }
+  const next = safeNext(form.get('next'))
+  if (!auth.check(form.get('u') || '', form.get('p') || '')) {
+    console.log('[video-server] login failed')
+    await new Promise(r => setTimeout(r, 400))
+    return send(res, 401, loginPage({ siteTitle: SITE_TITLE, next, error: '用户名或密码不正确' }))
+  }
+  const { value, maxAge } = auth.issue()
+  console.log('[video-server] login ok')
+  return redirect(res, next, {
+    'Set-Cookie': `${auth.cookieName}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+  })
+}
+
 const server = http.createServer(async (req, res) => {
   const started = Date.now()
   try {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const isWrite = req.method === 'POST'
+    if (!isWrite && req.method !== 'GET' && req.method !== 'HEAD') {
       return send(res, 405, errorPage({ status: 405, message: '只支持 GET', title: SITE_TITLE }))
     }
 
@@ -204,7 +259,35 @@ const server = http.createServer(async (req, res) => {
 
     if (ASSETS[rawPath]) return serveAsset(res, rawPath)
     if (rawPath === '/api/health') {
-      return send(res, 200, JSON.stringify({ ok: true, root: MEDIA_ROOT }), 'application/json')
+      return send(res, 200, JSON.stringify({ ok: true, root: MEDIA_ROOT, auth: !!auth }), 'application/json')
+    }
+
+    if (rawPath === '/login') {
+      if (req.method === 'POST') return await handleLogin(req, res)
+      if (!req.method.startsWith('GET') && req.method !== 'HEAD') {
+        return send(res, 405, errorPage({ status: 405, message: '不支持的方法', title: SITE_TITLE }))
+      }
+      if (!auth) return redirect(res, '/')
+      if (auth.isAuthed(parseCookies(req.headers.cookie))) return redirect(res, safeNext(query.get('next')))
+      return send(res, 200, loginPage({ siteTitle: SITE_TITLE, next: safeNext(query.get('next')) }))
+    }
+
+    if (rawPath === '/logout') {
+      return redirect(res, '/login', {
+        'Set-Cookie': `${auth ? auth.cookieName : 'vod_sess'}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+      })
+    }
+
+    if (isWrite) {
+      return send(res, 405, errorPage({ status: 405, message: '不支持的方法', title: SITE_TITLE }))
+    }
+
+    if (auth && !auth.isAuthed(parseCookies(req.headers.cookie))) {
+      if (rawPath.startsWith('/f/')) {
+        return send(res, 401, 'Unauthorized', 'text/plain; charset=utf-8')
+      }
+      const next = encodeURIComponent(rawPath + (url.search || ''))
+      return redirect(res, `/login?next=${next}`)
     }
 
     const segs = segmentsOf(rawPath)
