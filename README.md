@@ -74,19 +74,22 @@ Set both `AUTH_USER` and `AUTH_PASS` to enable the login page. Sessions are
 stateless HMAC-signed cookies valid for 30 days; changing either value
 invalidates every existing session. Leave them empty to serve anonymously.
 
-## 开机自启（Windows，可选）/ Autostart
+## 启停（Windows）/ Start & Stop
+
+仓库自带两个脚本，端口从 `.env` 的 `PORT` 读取：
+
+```bat
+start.bat    :: 后台启动，已在运行则直接跳过；日志写 server.log
+stop.bat     :: 杀掉监听该端口的进程（同时结束计划任务）
+```
+
+`start.bat` 用独立窗口拉起 `node server.js`，关掉当前命令行不影响服务；`stop.bat` 按端口找 PID，不会误杀机器上其他 node 进程。
+
+## 开机自启（可选）/ Autostart
 
 ```bat
 schtasks /Create /TN video-server /TR "E:\dev\video-server\start.bat" /SC ONLOGON /RL HIGHEST /F
 schtasks /Run /TN video-server
-```
-
-`start.bat`：
-
-```bat
-@echo off
-cd /d E:\dev\video-server
-node server.js >> server.log 2>&1
 ```
 
 如需局域网访问，放行端口：
