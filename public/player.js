@@ -3,6 +3,7 @@
 
   var dataEl = document.getElementById('vod-data')
   var video = document.getElementById('v')
+  var frame = document.querySelector('.frame')
   var titleEl = document.getElementById('title')
   var plEl = document.getElementById('pl')
   if (!dataEl || !video) return
@@ -11,6 +12,20 @@
   var items = data.items
   var current = data.current
   var POS = 'vod:pos:'
+
+  // keep the element box on the picture's aspect ratio, filling the frame on
+  // whichever axis runs out first — so the window never has to be scrolled
+  function fitVideo () {
+    if (!frame || document.fullscreenElement) return
+    var ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9
+    frame.style.setProperty('--ar', ar)
+    var w = frame.clientWidth
+    var h = frame.clientHeight
+    if (!w || !h) return
+    var vw = Math.min(w, h * ar)
+    video.style.width = vw + 'px'
+    video.style.height = vw / ar + 'px'
+  }
 
   function encodePath (p) {
     return p.split('/').map(encodeURIComponent).join('/')
@@ -49,14 +64,20 @@
     }
   }
 
+  function revealInList (li) {
+    // scroll the playlist only — never the page, which must stay put
+    var lb = plEl.getBoundingClientRect()
+    var ib = li.getBoundingClientRect()
+    if (ib.top < lb.top) plEl.scrollTop -= lb.top - ib.top
+    else if (ib.bottom > lb.bottom) plEl.scrollTop += ib.bottom - lb.bottom
+  }
+
   function markActive (path) {
     for (var i = 0; i < plEl.children.length; i++) {
       var li = plEl.children[i]
       var on = li.getAttribute('data-path') === path
       li.classList.toggle('on', on)
-      if (on && li.scrollIntoView) {
-        li.scrollIntoView({ block: 'nearest' })
-      }
+      if (on) revealInList(li)
     }
   }
 
@@ -149,7 +170,14 @@
     if (p && p !== current) load(p, { push: false })
   })
 
+  video.addEventListener('loadedmetadata', fitVideo)
+  document.addEventListener('fullscreenchange', fitVideo)
+  if (window.ResizeObserver && frame) new ResizeObserver(fitVideo).observe(frame)
+  else window.addEventListener('resize', fitVideo)
+  fitVideo()
+
   history.replaceState({ path: current }, '', location.pathname + location.search)
   paintProgress()
+  markActive(current)
   video.play().catch(function () {})
 })()

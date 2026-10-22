@@ -133,33 +133,60 @@ main { max-width: 1080px; margin: 0 auto; padding: 8px 20px 64px; }
 .logout:hover { color: var(--accent); }
 
 /* ---------- watch ---------- */
-.watch-body { overflow: hidden; }
+/* the player owns the whole window: it must fit, never scroll, at any size */
+.watch-body {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
 
 .watch {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 26vw, 320px);
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
-  height: calc(100vh - 52px);
+  height: calc(100% - 52px);
   max-width: none;
   padding: 0;
+  overflow: hidden;
 }
 
 .stage {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   background: #000;
 }
 
-.stage video {
-  flex: 1;
-  width: 100%;
+.frame {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* player.js sizes the element to the picture's aspect ratio inside .frame, so the
+   native controls hug the video instead of floating in a black band below it.
+   These are the pre-JS / no-JS fallbacks. */
+.frame video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
   background: #000;
   outline: none;
 }
 
-.now { padding: 14px 20px 18px; background: var(--bg); border-top: 1px solid var(--line); }
+.stage video:fullscreen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+.now { padding: 14px 20px 18px; overflow: hidden; background: var(--bg); border-top: 1px solid var(--line); }
 .now h1 { margin: 0; font-size: 16px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now .hint { margin-top: 4px; color: var(--dim); font-size: 12px; }
 
@@ -212,11 +239,29 @@ main { max-width: 1080px; margin: 0 auto; padding: 8px 20px 64px; }
   opacity: .7;
 }
 
+/* stack the playlist under the video when the window is narrow or portrait-ish;
+   a wide-but-squat window (landscape phone) keeps the side-by-side layout */
+@media (min-height: 480px) and (max-width: 820px),
+       (min-height: 480px) and (max-width: 1100px) and (max-aspect-ratio: 1 / 1) {
+  .watch {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  /* let the stage hug the picture instead of reserving a fixed share of the
+     screen for black bars; --ar is set by player.js from the real video size */
+  .frame {
+    aspect-ratio: var(--ar, 16 / 9);
+    max-height: 60vh;
+  }
+  .side { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+@media (max-height: 460px) {
+  .now { padding: 8px 16px 10px; }
+  .now .hint { display: none; }
+}
+
 @media (max-width: 820px) {
-  .watch { grid-template-columns: 1fr; height: auto; }
-  .stage video { height: 56vw; }
-  .side { border-left: 0; border-top: 1px solid var(--line); max-height: 45vh; }
-  .watch-body { overflow: auto; }
   .list td.dim { display: none; }
   .list th:nth-child(3) { display: none; }
 }
